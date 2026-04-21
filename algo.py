@@ -25,14 +25,15 @@ def compute_ifi(mu_prime, pi):                                          # Step 3
 
 
 def apply_her(ifi):                                                     # Step 4: HER (Algorithm 1)
-    L = np.log1p(ifi)
-    L_illum = cv2.GaussianBlur(L.astype(np.float32), (0, 0), 15).astype(np.float64)
-    R = L - L_illum                                                     # Eq.(6)
-    L_u8 = cv2.normalize(L_illum, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    L_eq = cv2.equalizeHist(L_u8).astype(np.float64) / 255.0
-    M = L_eq + R                                                        # Eq.(5)
-    return np.clip(np.expm1(M), 0.0, None)
-
+    ifi     = np.clip(ifi, 1e-6, 1.0)
+    L       = np.log1p(ifi * 255.0)                                    # scale then log
+    L_illum = cv2.GaussianBlur(L.astype(np.float32), (0,0), 15).astype(np.float64)
+    R       = L - L_illum                                              # Eq.(6)
+    L_u8    = cv2.normalize(L_illum, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    L_eq    = cv2.equalizeHist(L_u8).astype(np.float64) / 255.0
+    M       = L_eq + R * 0.3                                           # Eq.(5) — 0.3 dampens noise
+    result  = cv2.normalize(M, None, 0.0, 1.0, cv2.NORM_MINMAX)
+    return result.astype(np.float64)
 
 def optimize_phi(mu, t_min, t_max):                                    # Step 5: Phi optimization
     best_entropy = -np.inf
@@ -43,7 +44,11 @@ def optimize_phi(mu, t_min, t_max):                                    # Step 5:
         mu_prime, nu_prime, pi = apply_ifg(mu, phi)
         ifi = compute_ifi(mu_prime, pi)
         ifi_phi = apply_her(ifi)
-        img_u8 = cv2.normalize(ifi_phi, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+        img_u8 = cv2.normalize(
+            np.clip(ifi_phi, 0, None), None, 0, 255, cv2.NORM_MINMAX
+        ).astype(np.uint8)
+
         ent = shannon_entropy(img_u8)                                   # Eq.(4)
 
         if ent > best_entropy:
@@ -60,17 +65,18 @@ def defuzzify(ifi_phi, t_min, t_max):                                  # Step 6:
     return np.clip(S, 0, 255).astype(np.uint8)
 
 
-def ifi_her_enhance(image_bgr):                                        # Full pipeline
-    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    enhanced_channels = []
+def enhance_channel(channel):                                           # Run full IFI-HER on one channel
+    mu, t_min, t_max = fuzzify(channel)                                 # Step 1
+    best_ifi_phi, _ = optimize_phi(mu, t_min, t_max)                   # Steps 2-5
+    return defuzzify(best_ifi_phi, t_min, t_max)                       # Step 6
 
-    for idx, name in enumerate(["R", "G", "B"]):
-        print(f"  Processing {name} channel...")
-        channel = image_rgb[:, :, idx].astype(np.float64)
-        mu, t_min, t_max = fuzzify(channel)                            # Step 1
-        best_ifi_phi, _ = optimize_phi(mu, t_min, t_max)              # Steps 2-5
-        enhanced = defuzzify(best_ifi_phi, t_min, t_max)              # Step 6
-        enhanced_channels.append(enhanced)
 
-    enhanced_rgb = np.stack(enhanced_channels, axis=2)
-    return cv2.cvtColor(enhanced_rgb, cv2.COLOR_RGB2BGR)
+def ifi_her_enhance(image_bgr):                                         # Full pipeline
+    ycrcb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2YCrCb)               # convert to YCrCb
+    Y, Cr, Cb = cv2.split(ycrcb)
+
+    print("  Processing Y channel...")
+    Y_enhanced = enhance_channel(Y.astype(np.float64))                  # enhance only luminance
+
+    enhanced_ycrcb = cv2.merge([Y_enhanced, Cr, Cb])                    # keep original colors
+    return cv2.cvtColor(enhanced_ycrcb, cv2.COLOR_YCrCb2BGR)           # back to BGR

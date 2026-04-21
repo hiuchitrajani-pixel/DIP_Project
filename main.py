@@ -4,8 +4,8 @@ import os, time
 from algo import ifi_her_enhance
 from metrics import compute_all_metrics
 
-INPUT_IMAGE = "sample_input.jpg"                                       # input low-light image
-OUTPUT_IMAGE = "enhanced_output.jpg"                                   # output enhanced image
+INPUT_IMAGE = "146.png"                                       # input low-light image
+OUTPUT_IMAGE = "enhanced_output.png"                                   # output enhanced image
 
 
 def main():
