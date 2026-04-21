@@ -18,7 +18,7 @@ Both algorithms tackle the same core problem — making dark images brighter and
 dip-lab/
 │
 ├── ifi-her-enhancement/          # Paper 1 — IFI-HER Algorithm
-│   ├── ifi_her.py
+│   ├── algo.py
 │   ├── metrics.py
 │   ├── main.py
 │   └── requirements.txt
